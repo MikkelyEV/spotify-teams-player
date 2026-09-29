@@ -1,0 +1,1 @@
+{"name":"sotd-api","version":"1.0.0","type":"module","main":"src/functions/*.js","scripts":{"start":"func start"},"dependencies":{"@azure/data-tables":"^13.3.0","@azure/functions":"^4.7.2","luxon":"^3.7.2"}}
