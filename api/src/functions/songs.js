@@ -5,14 +5,13 @@ import { DateTime } from 'luxon';
 
 export const centralZone = 'America/Chicago';
 let tablePromise;
+let ratingsCleanupTablePromise;
 
 export function getTableClient() {
   if (!tablePromise) {
     tablePromise = (async () => {
       const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
-      if (!connectionString) {
-        throw new Error('Song storage is not configured.');
-      }
+      if (!connectionString) throw new Error('Song storage is not configured.');
       const client = TableClient.fromConnectionString(connectionString, 'sotdSongs');
       await client.createTable();
       return client;
@@ -24,7 +23,24 @@ export function getTableClient() {
   return tablePromise;
 }
 
+async function getRatingsCleanupTableClient() {
+  if (!ratingsCleanupTablePromise) {
+    ratingsCleanupTablePromise = (async () => {
+      const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+      if (!connectionString) throw new Error('Rating storage is not configured.');
+      const client = TableClient.fromConnectionString(connectionString, 'SotdRatings');
+      await client.createTable();
+      return client;
+    })().catch((error) => {
+      ratingsCleanupTablePromise = undefined;
+      throw error;
+    });
+  }
+  return ratingsCleanupTablePromise;
+}
+
 const text = (value) => (typeof value === 'string' ? value.trim().slice(0, 256) : '');
+const ownerRowKey = (userId) => createHash('sha256').update(userId).digest('hex');
 
 // Public Spotify metadata (no credentials); failures fall back to empty values.
 export async function trackMetadata(trackId) {
@@ -43,7 +59,7 @@ export async function trackMetadata(trackId) {
         : entity?.subtitle);
     }
   } catch {
-    // Ignore; metadata is optional.
+    // Metadata is optional.
   }
   if (!metadata.trackTitle) {
     try {
@@ -52,7 +68,7 @@ export async function trackMetadata(trackId) {
       });
       if (response.ok) metadata.trackTitle = text((await response.json())?.title);
     } catch {
-      // Ignore; metadata is optional.
+      // Metadata is optional.
     }
   }
   return metadata;
@@ -66,6 +82,7 @@ function songResponse(song) {
     trackTitle: song.trackTitle || '',
     artistName: song.artistName || '',
     spotifyUrl: song.spotifyUrl || `https://open.spotify.com/track/${song.trackId}`,
+    songOwnerId: song.userId,
     userName: song.userName,
     createdUtc: createdUtc(song),
     centralTime: DateTime.fromISO(createdUtc(song), { zone: 'utc' })
@@ -73,6 +90,27 @@ function songResponse(song) {
       .setLocale('en-US')
       .toFormat('h:mm a'),
   };
+}
+
+async function removeRatingsForOwner(day, songOwnerId, context) {
+  try {
+    const client = await getRatingsCleanupTableClient();
+    for await (const entity of client.listEntities({
+      queryOptions: {
+        filter: odata`PartitionKey eq ${day} and songOwnerId eq ${songOwnerId}`,
+        select: ['PartitionKey', 'RowKey'],
+      },
+    })) {
+      try {
+        await client.deleteEntity(entity.partitionKey, entity.rowKey);
+      } catch (error) {
+        if (error.statusCode !== 404) throw error;
+      }
+    }
+  } catch (error) {
+    // Ratings for the old track are also excluded by trackId, so replacement remains safe.
+    context.warn(`Unable to remove replaced-song ratings: ${error.message}`);
+  }
 }
 
 export async function songs(request, context) {
@@ -83,9 +121,7 @@ export async function songs(request, context) {
       const entries = [];
       for await (const entity of client.listEntities({
         queryOptions: { filter: odata`PartitionKey eq ${today}` },
-      })) {
-        entries.push(entity);
-      }
+      })) entries.push(entity);
       entries.sort((a, b) => createdUtc(a).localeCompare(createdUtc(b)));
       return {
         status: 200,
@@ -117,8 +153,7 @@ export async function songs(request, context) {
     const userId = body.userId.trim();
     const entity = {
       partitionKey: now.toISODate(),
-      // A deterministic, Table-safe key makes concurrent submissions atomic.
-      rowKey: createHash('sha256').update(userId).digest('hex'),
+      rowKey: ownerRowKey(userId),
       trackId: body.trackId,
       trackTitle: metadata.trackTitle,
       artistName: metadata.artistName,
@@ -128,8 +163,8 @@ export async function songs(request, context) {
       createdUtc: now.toUTC().toISO(),
     };
     if (body.replace === true) {
-      // Only an explicit, user-confirmed request replaces the user's single entry for today.
       await client.upsertEntity(entity, 'Replace');
+      await removeRatingsForOwner(entity.partitionKey, userId, context);
       return { status: 200, jsonBody: songResponse(entity) };
     }
     try {
@@ -144,18 +179,14 @@ export async function songs(request, context) {
         }
         return {
           status: 409,
-          jsonBody: {
-            error: 'Ya agregaste una canción hoy.',
-            code: 'ALREADY_SUBMITTED',
-            existing,
-          },
+          jsonBody: { error: 'Ya agregaste una canción hoy.', code: 'ALREADY_SUBMITTED', existing },
         };
       }
       throw error;
     }
     return { status: 201, jsonBody: songResponse(entity) };
-  } catch {
-    context.error('Unable to access song storage.');
+  } catch (error) {
+    context.error(`Unable to access song storage: ${error.message}`);
     return { status: 500, jsonBody: { error: 'Song storage is unavailable. Please try again later.' } };
   }
 }
