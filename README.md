@@ -6,7 +6,7 @@ Shared Song of the Day app for a Microsoft Teams group chat.
 - One track per Teams user per Central-Time day.
 - Shows who submitted each track and the Central-Time submission time.
 - Refreshes every 30 seconds.
-- Timer cleanup runs at 06:00 UTC, which equals midnight CST. Note: during daylight saving time, Central midnight is 05:00 UTC; use two timer checks or a separate scheduler if exact America/Chicago midnight year-round is required.
+- Timer cleanup runs at 05:00 and 06:00 UTC to cover midnight in both CDT and CST. It removes only entries before the current America/Chicago calendar day; today's list and submission limit reset at Central midnight independently of cleanup.
 
 ## Architecture
 - Azure Static Web Apps hosts index.html.
