@@ -1,0 +1,1 @@
+{"navigationFallback":{"rewrite":"/index.html"},"globalHeaders":{"Content-Security-Policy":"default-src 'self'; script-src 'self' 'unsafe-inline' https://res.cdn.office.net; frame-src https://open.spotify.com; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"}}
