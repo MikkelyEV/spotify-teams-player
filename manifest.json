@@ -1,0 +1,11 @@
+{
+  "$schema":"https://developer.microsoft.com/en-us/json-schemas/teams/v1.19/MicrosoftTeams.schema.json",
+  "manifestVersion":"1.19","version":"1.0.0","id":"822ecdde-00bc-4e17-aab7-45b292b6a555",
+  "developer":{"name":"Mikkely Espinoza","websiteUrl":"https://proud-pebble-029448810.4.azurestaticapps.net","privacyUrl":"https://proud-pebble-029448810.4.azurestaticapps.net","termsOfUseUrl":"https://proud-pebble-029448810.4.azurestaticapps.net"},
+  "icons":{"outline":"outline.png","color":"color.png"},
+  "name":{"short":"Spotify Player","full":"Reusable Spotify Player for Teams"},
+  "description":{"short":"Spotify player for a group chat","full":"A reusable Microsoft Teams group-chat tab for loading Spotify tracks."},
+  "accentColor":"#1DB954",
+  "staticTabs":[{"entityId":"spotify-player","name":"Spotify Player","contentUrl":"https://proud-pebble-029448810.4.azurestaticapps.net/index.html","websiteUrl":"https://proud-pebble-029448810.4.azurestaticapps.net/index.html","scopes":["groupChat"],"context":["privateChatTab"]}],
+  "permissions":[],"validDomains":["proud-pebble-029448810.4.azurestaticapps.net","open.spotify.com"]
+}

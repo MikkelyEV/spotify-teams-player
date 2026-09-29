@@ -1,0 +1,14 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.19/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.19",
+  "version": "1.0.0",
+  "id": "REPLACE-WITH-A-NEW-GUID",
+  "developer": {"name":"Mikkely Espinoza","websiteUrl":"https://YOUR-HTTPS-HOST.example","privacyUrl":"https://YOUR-HTTPS-HOST.example","termsOfUseUrl":"https://YOUR-HTTPS-HOST.example"},
+  "icons": {"outline":"outline.png","color":"color.png"},
+  "name": {"short":"Spotify Player","full":"Reusable Spotify Player for Teams"},
+  "description": {"short":"Reusable Spotify player for a group chat","full":"A reusable Microsoft Teams group-chat tab where a Spotify track URL can be pasted to load the official Spotify embed player."},
+  "accentColor": "#1DB954",
+  "staticTabs": [{"entityId":"spotify-player","name":"Spotify Player","contentUrl":"https://YOUR-HTTPS-HOST.example/index.html","websiteUrl":"https://YOUR-HTTPS-HOST.example/index.html","scopes":["groupChat"],"context":["privateChatTab"]}],
+  "permissions": [],
+  "validDomains": ["YOUR-HTTPS-HOST.example","open.spotify.com"]
+}
