@@ -4,7 +4,7 @@ Shared Song of the Day app for a Microsoft Teams group chat.
 ## Features
 - Multiple Spotify tracks per day.
 - One track per Teams user per Central-Time day.
-- Shows who submitted each track and the Central-Time submission time.
+- Shows each track's title and artist (looked up from Spotify's public embed/oEmbed pages, no credentials needed), who submitted it, and the Central-Time submission time.
 - Refreshes every 30 seconds.
 - Timer cleanup runs at 05:00 and 06:00 UTC to cover midnight in both CDT and CST. It removes only entries before the current America/Chicago calendar day; today's list and submission limit reset at Central midnight independently of cleanup.
 

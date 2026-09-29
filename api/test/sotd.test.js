@@ -11,6 +11,11 @@ delete process.env.AZURE_STORAGE_CONNECTION_STRING;
 
 const httpRegistration = mock.method(app, 'http', () => {});
 const timerRegistration = mock.method(app, 'timer', () => {});
+const embedPage = (entity) => `<html><script id="__NEXT_DATA__" type="application/json">${
+  JSON.stringify({ props: { pageProps: { state: { data: { entity } } } } })}</script></html>`;
+const spotify = mock.method(globalThis, 'fetch', async () => new Response(embedPage({
+  name: 'BbyWOW', artists: [{ name: 'KAROL G' }, { name: 'Judeline' }, { name: 'rusowsky' }],
+})));
 const { songs } = await import('../src/functions/songs.js');
 const { cleanup } = await import('../src/functions/cleanup.js');
 const entries = new Map();
@@ -45,6 +50,7 @@ const connect = mock.method(TableClient, 'fromConnectionString', (connectionStri
   return table;
 });
 const trackId = 'A'.repeat(22);
+const song = { trackTitle: 'BbyWOW', artistName: 'KAROL G, Judeline, rusowsky' };
 const validBody = { trackId, userId: 'teams-user-1', userName: 'First user' };
 const get = () => songs(new HttpRequest({ method: 'GET', url: 'http://localhost/api/songs' }), context);
 const post = (body = validBody) => songs(new HttpRequest({
@@ -58,6 +64,7 @@ beforeEach(() => {
   entries.clear();
   context.error.mock.resetCalls();
   context.log.mock.resetCalls();
+  spotify.mock.resetCalls();
   now = '2026-07-15T17:00:00.000Z';
 });
 
@@ -109,7 +116,10 @@ test('multiple users can submit the same track and all required fields are store
   assert.equal(entity.trackId, trackId);
   assert.equal(entity.userId, validBody.userId);
   assert.equal(entity.userName, validBody.userName);
-  assert.equal(entity.createdAt, now);
+  assert.equal(entity.trackTitle, 'BbyWOW');
+  assert.equal(entity.artistName, 'KAROL G, Judeline, rusowsky');
+  assert.equal(entity.createdUtc, now);
+  assert.equal(spotify.mock.calls[0].arguments[0], `https://open.spotify.com/embed/track/${trackId}`);
   assert.equal((await get()).jsonBody.items.length, 2);
 });
 
@@ -146,8 +156,8 @@ test('GET returns only today, ordered by creation, in the existing frontend resp
   assert.equal(response.headers['Cache-Control'], 'no-store');
   assert.deepEqual(response.jsonBody, {
     items: [
-      { trackId, userName: 'earlier', centralTime: '11:00 AM' },
-      { trackId, userName: 'later', centralTime: '1:00 PM' },
+      { trackId, ...song, userName: 'earlier', centralTime: '11:00 AM' },
+      { trackId, ...song, userName: 'later', centralTime: '1:00 PM' },
     ],
   });
 });
@@ -167,7 +177,7 @@ for (const [name, before, afterMidnight] of [
     assert.deepEqual((await get()).jsonBody.items, []);
     assert.equal((await post()).status, 201);
     assert.deepEqual((await get()).jsonBody.items, [
-      { trackId, userName: validBody.userName, centralTime: '12:00 AM' },
+      { trackId, ...song, userName: validBody.userName, centralTime: '12:00 AM' },
     ]);
     assert.equal(entries.size, 2);
   });
@@ -185,6 +195,36 @@ for (const [name, before, afterShift] of [
     assert.equal((await get()).jsonBody.items.length, 1);
   });
 }
+
+test('legacy entries without metadata still render without exposing the track ID as a title', async () => {
+  process.env.AZURE_STORAGE_CONNECTION_STRING = 'test-storage';
+  const legacy = {
+    partitionKey: '2026-07-15', rowKey: 'legacy', trackId, userId: 'old', userName: 'Old user',
+    createdAt: '2026-07-15T16:00:00.000Z',
+  };
+  entries.set(key(legacy), legacy);
+  await post();
+  assert.deepEqual((await get()).jsonBody.items, [
+    { trackId, trackTitle: '', artistName: '', userName: 'Old user', centralTime: '11:00 AM' },
+    { trackId, ...song, userName: validBody.userName, centralTime: '12:00 PM' },
+  ]);
+});
+
+test('metadata falls back to oEmbed for the title and never blocks a submission', async (t) => {
+  process.env.AZURE_STORAGE_CONNECTION_STRING = 'test-storage';
+  const lookup = t.mock.method(globalThis, 'fetch', async (url) => (String(url).includes('/oembed?')
+    ? Response.json({ title: 'BbyWOW' })
+    : new Response('unavailable', { status: 503 })));
+  assert.equal((await post()).status, 201);
+  assert.equal(lookup.mock.calls[1].arguments[0],
+    `https://open.spotify.com/oembed?url=${encodeURIComponent(`https://open.spotify.com/track/${trackId}`)}`);
+  lookup.mock.mockImplementation(async () => { throw new Error('network down'); });
+  assert.equal((await post({ ...validBody, userId: 'teams-user-2' })).status, 201);
+  assert.deepEqual((await get()).jsonBody.items.map(({ trackTitle, artistName }) => [trackTitle, artistName]), [
+    ['BbyWOW', ''],
+    ['', ''],
+  ]);
+});
 
 test('invalid JSON and invalid fields are rejected before writing to storage', async () => {
   const malformed = new HttpRequest({
