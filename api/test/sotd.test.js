@@ -40,6 +40,15 @@ const table = {
       }
     }
   },
+  async getEntity(partitionKey, rowKey) {
+    const entity = entries.get(key({ partitionKey, rowKey }));
+    if (!entity) throw storageError(404);
+    return { ...entity };
+  },
+  async upsertEntity(entity, mode) {
+    assert.equal(mode, 'Replace');
+    entries.set(key(entity), { ...entity });
+  },
   async deleteEntity(partitionKey, rowKey) {
     entries.delete(key({ partitionKey, rowKey }));
   },
@@ -50,7 +59,8 @@ const connect = mock.method(TableClient, 'fromConnectionString', (connectionStri
   return table;
 });
 const trackId = 'A'.repeat(22);
-const song = { trackTitle: 'BbyWOW', artistName: 'KAROL G, Judeline, rusowsky' };
+const spotifyUrl = `https://open.spotify.com/track/${trackId}`;
+const song = { trackTitle: 'BbyWOW', artistName: 'KAROL G, Judeline, rusowsky', spotifyUrl };
 const validBody = { trackId, userId: 'teams-user-1', userName: 'First user' };
 const get = () => songs(new HttpRequest({ method: 'GET', url: 'http://localhost/api/songs' }), context);
 const post = (body = validBody) => songs(new HttpRequest({
@@ -156,8 +166,8 @@ test('GET returns only today, ordered by creation, in the existing frontend resp
   assert.equal(response.headers['Cache-Control'], 'no-store');
   assert.deepEqual(response.jsonBody, {
     items: [
-      { trackId, ...song, userName: 'earlier', centralTime: '11:00 AM' },
-      { trackId, ...song, userName: 'later', centralTime: '1:00 PM' },
+      { trackId, ...song, userName: 'earlier', createdUtc: '2026-07-15T16:00:00.000Z', centralTime: '11:00 AM' },
+      { trackId, ...song, userName: 'later', createdUtc: '2026-07-15T18:00:00.000Z', centralTime: '1:00 PM' },
     ],
   });
 });
@@ -177,7 +187,7 @@ for (const [name, before, afterMidnight] of [
     assert.deepEqual((await get()).jsonBody.items, []);
     assert.equal((await post()).status, 201);
     assert.deepEqual((await get()).jsonBody.items, [
-      { trackId, ...song, userName: validBody.userName, centralTime: '12:00 AM' },
+      { trackId, ...song, userName: validBody.userName, createdUtc: afterMidnight, centralTime: '12:00 AM' },
     ]);
     assert.equal(entries.size, 2);
   });
@@ -205,8 +215,11 @@ test('legacy entries without metadata still render without exposing the track ID
   entries.set(key(legacy), legacy);
   await post();
   assert.deepEqual((await get()).jsonBody.items, [
-    { trackId, trackTitle: '', artistName: '', userName: 'Old user', centralTime: '11:00 AM' },
-    { trackId, ...song, userName: validBody.userName, centralTime: '12:00 PM' },
+    {
+      trackId, trackTitle: '', artistName: '', spotifyUrl, userName: 'Old user',
+      createdUtc: legacy.createdAt, centralTime: '11:00 AM',
+    },
+    { trackId, ...song, userName: validBody.userName, createdUtc: now, centralTime: '12:00 PM' },
   ]);
 });
 
@@ -224,6 +237,43 @@ test('metadata falls back to oEmbed for the title and never blocks a submission'
     ['BbyWOW', ''],
     ['', ''],
   ]);
+});
+
+test('a duplicate submission reports the existing song and changes nothing', async () => {
+  process.env.AZURE_STORAGE_CONNECTION_STRING = 'test-storage';
+  assert.equal((await post()).status, 201);
+  now = '2026-07-15T21:08:00.000Z';
+  const response = await post({ ...validBody, trackId: 'B'.repeat(22) });
+  assert.equal(response.status, 409);
+  assert.equal(response.jsonBody.code, 'ALREADY_SUBMITTED');
+  assert.equal(response.jsonBody.existing.trackId, trackId);
+  assert.equal(entries.size, 1);
+  assert.equal([...entries.values()][0].trackId, trackId);
+  assert.equal([...entries.values()][0].createdUtc, '2026-07-15T17:00:00.000Z');
+});
+
+test('a confirmed replacement overwrites the user entry, keeps one record, and re-sorts by UTC time', async () => {
+  process.env.AZURE_STORAGE_CONNECTION_STRING = 'test-storage';
+  const other = 'C'.repeat(22);
+  const replacement = 'B'.repeat(22);
+  assert.equal((await post()).status, 201);
+  now = '2026-07-15T18:00:00.000Z';
+  assert.equal((await post({ ...validBody, trackId: other, userId: 'teams-user-2', userName: 'Second user' })).status, 201);
+  now = '2026-07-15T21:08:00.000Z';
+  const response = await post({ ...validBody, trackId: replacement, replace: true });
+  assert.equal(response.status, 200);
+  assert.equal(response.jsonBody.trackId, replacement);
+  assert.equal(response.jsonBody.centralTime, '4:08 PM');
+  assert.equal(entries.size, 2);
+  const items = (await get()).jsonBody.items;
+  assert.deepEqual(items.map((item) => item.trackId), [other, replacement]);
+  assert.deepEqual(items[1], {
+    trackId: replacement, ...song, spotifyUrl: `https://open.spotify.com/track/${replacement}`,
+    userName: validBody.userName, createdUtc: now, centralTime: '4:08 PM',
+  });
+  assert.ok(!items.some((item) => item.trackId === trackId));
+  assert.equal((await post({ ...validBody, trackId: other })).status, 409);
+  assert.equal((await post({ ...validBody, replace: 'yes' })).status, 400);
 });
 
 test('invalid JSON and invalid fields are rejected before writing to storage', async () => {

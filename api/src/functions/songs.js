@@ -65,9 +65,12 @@ function songResponse(song) {
     trackId: song.trackId,
     trackTitle: song.trackTitle || '',
     artistName: song.artistName || '',
+    spotifyUrl: song.spotifyUrl || `https://open.spotify.com/track/${song.trackId}`,
     userName: song.userName,
+    createdUtc: createdUtc(song),
     centralTime: DateTime.fromISO(createdUtc(song), { zone: 'utc' })
       .setZone(centralZone)
+      .setLocale('en-US')
       .toFormat('h:mm a'),
   };
 }
@@ -100,7 +103,8 @@ export async function songs(request, context) {
     if (!body || typeof body !== 'object' || Array.isArray(body)
       || typeof body.trackId !== 'string' || !/^[A-Za-z0-9]{22}$/.test(body.trackId)
       || typeof body.userId !== 'string' || !body.userId.trim() || body.userId.length > 256
-      || typeof body.userName !== 'string' || !body.userName.trim() || body.userName.length > 256) {
+      || typeof body.userName !== 'string' || !body.userName.trim() || body.userName.length > 256
+      || (body.replace !== undefined && typeof body.replace !== 'boolean')) {
       return {
         status: 400,
         jsonBody: { error: 'A valid Spotify track ID, userId, and userName are required.' },
@@ -118,17 +122,33 @@ export async function songs(request, context) {
       trackId: body.trackId,
       trackTitle: metadata.trackTitle,
       artistName: metadata.artistName,
+      spotifyUrl: `https://open.spotify.com/track/${body.trackId}`,
       userId,
       userName: body.userName.trim(),
       createdUtc: now.toUTC().toISO(),
     };
+    if (body.replace === true) {
+      // Only an explicit, user-confirmed request replaces the user's single entry for today.
+      await client.upsertEntity(entity, 'Replace');
+      return { status: 200, jsonBody: songResponse(entity) };
+    }
     try {
       await client.createEntity(entity);
     } catch (error) {
       if (error.statusCode === 409) {
+        let existing;
+        try {
+          existing = songResponse(await client.getEntity(entity.partitionKey, entity.rowKey));
+        } catch {
+          existing = undefined;
+        }
         return {
           status: 409,
-          jsonBody: { error: 'You have already submitted a song for today (Central Time).' },
+          jsonBody: {
+            error: 'Ya agregaste una canción hoy.',
+            code: 'ALREADY_SUBMITTED',
+            existing,
+          },
         };
       }
       throw error;
