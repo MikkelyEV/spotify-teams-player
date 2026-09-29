@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spotify Player</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Segoe UI,Arial,sans-serif;background:#111;color:#fff}.wrap{width:min(780px,100%);margin:auto;padding:28px 20px}.card{background:#1b1b1b;border:1px solid #333;border-radius:16px;padding:20px}.row{display:flex;gap:10px;flex-wrap:wrap}input{flex:1;min-width:240px;background:#262626;border:1px solid #555;border-radius:8px;color:#fff;padding:12px}button{border:0;border-radius:8px;background:#1db954;color:#07140b;padding:12px 18px;font-weight:700;cursor:pointer}.hint{color:#bbb;font-size:13px;margin:10px 0 18px}.error{color:#ffb4ab;font-size:13px;min-height:18px;margin-top:8px}iframe{display:block;border:0;border-radius:12px;width:100%;height:352px;margin-top:18px}
+</style>
+</head>
+<body><main class="wrap"><section class="card"><div class="row"><input id="spotifyUrl" type="url" autocomplete="off" placeholder="Paste a Spotify track URL"><button id="load">Load song</button></div><div class="hint">Paste a Spotify track link such as open.spotify.com/track/...</div><div id="error" class="error"></div><iframe id="player" title="Spotify player" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe></section></main>
+<script>
+const DEFAULT='3h5T5JypYU7huFiVYhv1dr';
+function trackId(value){try{const u=new URL(value.trim());if(u.hostname!=='open.spotify.com')return null;const m=u.pathname.match(/^\/track\/([A-Za-z0-9]+)\/?$/);return m?m[1]:null}catch{return /^[A-Za-z0-9]{15,30}$/.test(value.trim())?value.trim():null}}
+function setTrack(id){document.getElementById('player').src='https://open.spotify.com/embed/track/'+encodeURIComponent(id)+'?utm_source=generator';localStorage.setItem('spotifyTrackId',id);document.getElementById('error').textContent=''}
+function load(){const id=trackId(document.getElementById('spotifyUrl').value);if(!id){document.getElementById('error').textContent='Paste a valid Spotify track URL.';return}setTrack(id)}
+document.getElementById('load').addEventListener('click',load);document.getElementById('spotifyUrl').addEventListener('keydown',e=>{if(e.key==='Enter')load()});setTrack(localStorage.getItem('spotifyTrackId')||DEFAULT);
+</script></body></html>
